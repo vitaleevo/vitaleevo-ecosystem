@@ -6,8 +6,10 @@ use App\Models\IdempotencyKey;
 use App\Models\Professional;
 use App\Models\ServiceAssignment;
 use App\Models\ServiceCategory;
+use App\Models\ServiceFeedback;
 use App\Models\ServiceRequest;
 use App\Models\Tenant;
+use App\Models\User;
 use App\Notifications\ServiceRequestStatusNotification;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -19,15 +21,15 @@ class ServiceController extends BaseApiController
 {
     public function categories(): JsonResponse
     {
-        return response()->json(ServiceCategory::where('active',true)->orderBy('name')->get());
+        return response()->json(ServiceCategory::where('active', true)->orderBy('name')->get());
     }
 
     public function publicStore(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'category_id'=>['required','exists:service_categories,id'], 'customer_name'=>['required','string','max:160'],
-            'customer_email'=>['nullable','email','max:190'], 'customer_phone'=>['required','string','max:40'],
-            'description'=>['required','string','min:10','max:5000'], 'consent'=>['accepted'],
+            'category_id' => ['required', 'exists:service_categories,id'], 'customer_name' => ['required', 'string', 'max:160'],
+            'customer_email' => ['nullable', 'email', 'max:190'], 'customer_phone' => ['required', 'string', 'max:40'],
+            'description' => ['required', 'string', 'min:10', 'max:5000'], 'consent' => ['accepted'],
         ]);
 
         $key = trim((string) $request->header('Idempotency-Key'));
@@ -46,10 +48,11 @@ class ServiceController extends BaseApiController
             ]);
 
             $item = ServiceRequest::create($data + [
-                'public_reference'=>'SR-'.strtoupper(Str::random(10)),
-                'status'=>'submitted',
+                'public_reference' => 'SR-'.strtoupper(Str::random(10)),
+                'status' => 'submitted',
             ]);
-            $record->update(['resource_type'=>'service_request','resource_id'=>$item->id]);
+            $record->update(['resource_type' => 'service_request', 'resource_id' => $item->id]);
+
             return [$item, true];
         });
 
@@ -57,14 +60,15 @@ class ServiceController extends BaseApiController
         if ($created) {
             $this->notifyCustomer($item);
         }
-        return response()->json(['reference'=>$item->public_reference,'status'=>$item->status], $created ? 201 : 200);
+
+        return response()->json(['reference' => $item->public_reference, 'status' => $item->status], $created ? 201 : 200);
     }
 
     public function publicStatus(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'reference' => ['required','string','max:40'],
-            'customer_phone' => ['required','string','max:40'],
+            'reference' => ['required', 'string', 'max:40'],
+            'customer_phone' => ['required', 'string', 'max:40'],
         ]);
 
         $item = ServiceRequest::where('public_reference', strtoupper($data['reference']))
@@ -75,14 +79,43 @@ class ServiceController extends BaseApiController
             'reference' => $item->public_reference,
             'status' => $item->status,
             'updated_at' => $item->updated_at,
+            'feedback_submitted' => ServiceFeedback::where('service_request_id', $item->id)->exists(),
         ]);
+    }
+
+    public function publicFeedback(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'reference' => ['required', 'string', 'max:40'],
+            'customer_phone' => ['required', 'string', 'max:40'],
+            'rating' => ['required', 'integer', 'min:1', 'max:5'],
+            'comment' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        $item = ServiceRequest::where('public_reference', strtoupper($data['reference']))
+            ->where('customer_phone', $data['customer_phone'])
+            ->where('status', 'completed')
+            ->firstOrFail();
+
+        $feedback = ServiceFeedback::updateOrCreate(
+            ['service_request_id' => $item->id],
+            ['rating' => $data['rating'], 'comment' => $data['comment'] ?? null]
+        );
+
+        return response()->json(['message' => 'Obrigado pelo seu feedback.', 'rating' => $feedback->rating]);
     }
 
     public function requests(Request $request): JsonResponse
     {
         $tenant = $this->tenantId($request);
+
         return response()->json(
-            ServiceRequest::where('tenant_id', $tenant)->latest()->paginate(50)
+            ServiceRequest::query()
+                ->where('service_requests.tenant_id', $tenant)
+                ->leftJoin('service_feedbacks', 'service_feedbacks.service_request_id', '=', 'service_requests.id')
+                ->select('service_requests.*', 'service_feedbacks.rating as feedback_rating', 'service_feedbacks.comment as feedback_comment')
+                ->latest('service_requests.created_at')
+                ->paginate(50)
         );
     }
 
@@ -91,48 +124,62 @@ class ServiceController extends BaseApiController
         $tenant = $this->tenantId($request);
         $item = ServiceRequest::where('tenant_id', $tenant)->findOrFail($id);
         $data = $request->validate([
-            'status'=>['sometimes','in:submitted,triage,assigned,in_progress,completed,cancelled'],
+            'status' => ['sometimes', 'in:submitted,triage,assigned,in_progress,completed,cancelled'],
         ]);
         $item->update($data);
         $this->notifyCustomer($item->fresh());
-        $this->audit($request,'updated','service_request',$item->id);
+        $this->audit($request, 'updated', 'service_request', $item->id);
+
         return response()->json($item);
     }
 
     public function professionals(): JsonResponse
     {
-        return response()->json(Professional::orderBy('name')->paginate(100));
+        return response()->json(
+            Professional::where('status', 'active')
+                ->where('verification_state', 'verified')
+                ->orderBy('name')
+                ->paginate(100)
+        );
     }
 
     public function createProfessional(Request $request): JsonResponse
     {
         abort_unless($request->user()->is_platform_owner, 403, 'Apenas o Platform Owner pode criar profissionais globais.');
         $data = $request->validate([
-            'name'=>['required','string','max:160'], 'email'=>['nullable','email','max:190'], 'phone'=>['nullable','string','max:40'],
-            'specialty'=>['required','string','max:160'], 'verification_state'=>['nullable','in:pending,verified,rejected'],
+            'name' => ['required', 'string', 'max:160'], 'email' => ['nullable', 'email', 'max:190'], 'phone' => ['nullable', 'string', 'max:40'],
+            'specialty' => ['required', 'string', 'max:160'], 'verification_state' => ['nullable', 'in:pending,verified,rejected'],
         ]);
+        $this->enforceBetaCapacity('professionals', Professional::count());
         $userId = filled($data['email'] ?? null)
-            ? \App\Models\User::where('email', mb_strtolower($data['email']))->value('id')
+            ? User::where('email', mb_strtolower($data['email']))->value('id')
             : null;
-        $item = Professional::create($data + ['user_id'=>$userId]);
-        $this->audit($request,'created','professional',$item->id);
-        return response()->json($item,201);
+        $item = Professional::create($data + ['user_id' => $userId]);
+        $this->audit($request, 'created', 'professional', $item->id);
+
+        return response()->json($item, 201);
     }
 
     public function assign(Request $request, int $id): JsonResponse
     {
-        abort_if($request->attributes->get('membership_role') === 'agent',403,'Sem permissão.');
+        abort_if($request->attributes->get('membership_role') === 'agent', 403, 'Sem permissão.');
         $tenant = $this->tenantId($request);
         $serviceRequest = ServiceRequest::where('tenant_id', $tenant)->findOrFail($id);
-        $data = $request->validate(['professional_id'=>['required','exists:professionals,id'],'notes'=>['nullable','string','max:2000']]);
+        $data = $request->validate(['professional_id' => ['required', 'exists:professionals,id'], 'notes' => ['nullable', 'string', 'max:2000']]);
+        $professional = Professional::whereKey($data['professional_id'])
+            ->where('status', 'active')
+            ->where('verification_state', 'verified')
+            ->first();
+        abort_unless($professional, 422, 'O profissional precisa estar ativo e verificado.');
         $assignment = ServiceAssignment::updateOrCreate(
-            ['request_id'=>$serviceRequest->id,'professional_id'=>$data['professional_id']],
-            ['status'=>'assigned','notes'=>$data['notes'] ?? null]
+            ['request_id' => $serviceRequest->id, 'professional_id' => $professional->id],
+            ['status' => 'assigned', 'notes' => $data['notes'] ?? null]
         );
-        $serviceRequest->update(['status'=>'assigned']);
+        $serviceRequest->update(['status' => 'assigned']);
         $this->notifyCustomer($serviceRequest->fresh());
-        $this->audit($request,'assigned','service_request',$serviceRequest->id,['professional_id'=>$data['professional_id']]);
-        return response()->json($assignment,201);
+        $this->audit($request, 'assigned', 'service_request', $serviceRequest->id, ['professional_id' => $data['professional_id']]);
+
+        return response()->json($assignment, 201);
     }
 
     public function professionalJobs(Request $request): JsonResponse
@@ -148,6 +195,7 @@ class ServiceController extends BaseApiController
             )
             ->latest('service_assignments.created_at')
             ->paginate(50);
+
         return response()->json($jobs);
     }
 
@@ -155,13 +203,19 @@ class ServiceController extends BaseApiController
     {
         $professional = Professional::where('user_id', $request->user()->id)->firstOrFail();
         $assignment = ServiceAssignment::where('professional_id', $professional->id)->findOrFail($id);
-        $data = $request->validate(['status'=>['required','in:accepted,rejected,in_progress,completed']]);
+        $data = $request->validate(['status' => ['required', 'in:accepted,rejected,in_progress,completed']]);
         $assignment->update($data);
 
         $serviceRequest = ServiceRequest::findOrFail($assignment->request_id);
-        if ($data['status'] === 'in_progress') $serviceRequest->update(['status'=>'in_progress']);
-        if ($data['status'] === 'completed') $serviceRequest->update(['status'=>'completed']);
-        if ($data['status'] === 'accepted') $serviceRequest->update(['status'=>'assigned']);
+        if ($data['status'] === 'in_progress') {
+            $serviceRequest->update(['status' => 'in_progress']);
+        }
+        if ($data['status'] === 'completed') {
+            $serviceRequest->update(['status' => 'completed']);
+        }
+        if ($data['status'] === 'accepted') {
+            $serviceRequest->update(['status' => 'assigned']);
+        }
         if ($data['status'] !== 'rejected') {
             $this->notifyCustomer($serviceRequest->fresh());
         }
@@ -171,11 +225,15 @@ class ServiceController extends BaseApiController
 
     private function notifyCustomer(ServiceRequest $item): void
     {
-        if (!filled($item->customer_email)) return;
+        if (! filled($item->customer_email)) {
+            return;
+        }
 
         if ($item->tenant_id) {
             $tenant = Tenant::find($item->tenant_id);
-            if (($tenant?->settings['email_notifications'] ?? true) === false) return;
+            if (($tenant?->settings['email_notifications'] ?? true) === false) {
+                return;
+            }
         }
 
         Notification::route('mail', $item->customer_email)->notify(

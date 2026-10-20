@@ -1,0 +1,140 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: vitaleevo_test
+          POSTGRES_USER: vitaleevo
+          POSTGRES_PASSWORD: vitaleevo
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U vitaleevo -d vitaleevo_test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=10
+    env:
+      APP_ENV: testing
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_DATABASE: vitaleevo_test
+      DB_USERNAME: vitaleevo
+      DB_PASSWORD: vitaleevo
+      CACHE_STORE: redis
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: 6379
+      SESSION_DRIVER: array
+      QUEUE_CONNECTION: sync
+      MAIL_MAILER: array
+      SANCTUM_STATEFUL_DOMAINS: localhost:3001,127.0.0.1:3001
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, pdo_pgsql, pdo_sqlite, redis
+          coverage: none
+      - run: composer validate --strict
+      - run: composer install --no-interaction --prefer-dist --no-progress
+      - run: vendor/bin/pint --test
+      - run: find app routes database tests -name '*.php' -print0 | xargs -0 -n1 php -l
+      - name: Exercise PostgreSQL and Redis integration
+        run: |
+          php artisan migrate --force
+          php artisan db:seed --force
+          php artisan tinker --execute="if (config('database.default') !== 'pgsql') exit(1); \Illuminate\Support\Facades\DB::select('select 1'); \Illuminate\Support\Facades\Cache::put('ci-health','ok',10); if (\Illuminate\Support\Facades\Cache::get('ci-health') !== 'ok') exit(1);"
+      - name: Run isolated application tests
+        run: php artisan test
+      - run: composer audit
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+  repository-safety:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Reject tracked environment secret files
+        run: |
+          if git ls-files | grep -E '(^|/)\.env($|\.)' | grep -v -E '\.env\.example$'; then
+            echo 'Tracked environment file detected.'
+            exit 1
+          fi
+      - name: Reject common private-key files
+        run: |
+          if git ls-files | grep -E '\.(pem|p12|pfx|key)$'; then
+            echo 'Tracked private key/certificate secret detected.'
+            exit 1
+          fi
+
+  containers:
+    runs-on: ubuntu-latest
+    needs: [backend, frontend, repository-safety]
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose build api web
+      - name: Start stack and wait for health
+        run: |
+          docker compose up -d db redis api web
+          for i in $(seq 1 45); do
+            if curl -fsS http://127.0.0.1:8000/api/v1/health >/dev/null && curl -fsS http://127.0.0.1:3001/ >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose ps
+          docker compose logs --tail=200 api web
+          exit 1
+      - name: Container smoke checks
+        run: |
+          curl -fsS http://127.0.0.1:8000/api/v1/health
+          curl -fsS http://127.0.0.1:8000/api/v1/plans
+          curl -fsS http://127.0.0.1:8000/api/v1/service-categories
+          curl -fsS http://127.0.0.1:3001/
+          curl -fsS http://127.0.0.1:3001/pedido
+          curl -fsS http://127.0.0.1:3001/privacidade
+          curl -fsS http://127.0.0.1:3001/termos
+      - if: always()
+        run: docker compose down -v

@@ -6,7 +6,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 type Category = { id: number; name: string };
-type Result = { reference: string; status: string; updated_at?: string };
+type Result = { reference: string; status: string; updated_at?: string; feedback_submitted?: boolean };
 
 async function csrf() {
   await fetch(`${API}/sanctum/csrf-cookie`, { credentials: "include" });
@@ -41,6 +41,8 @@ export default function PedidoPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [result, setResult] = useState<Result | null>(null);
   const [statusResult, setStatusResult] = useState<Result | null>(null);
+  const [statusLookup, setStatusLookup] = useState<{reference:string;customer_phone:string} | null>(null);
+  const [feedbackMessage, setFeedbackMessage] = useState("");
   const [error, setError] = useState("");
   const requestKey = useRef<string | null>(null);
 
@@ -74,8 +76,29 @@ export default function PedidoPage() {
     e.preventDefault();
     setError("");
     try {
-      const data = Object.fromEntries(new FormData(e.currentTarget).entries());
+      const data = Object.fromEntries(new FormData(e.currentTarget).entries()) as {reference:string;customer_phone:string};
+      setStatusLookup(data);
+      setFeedbackMessage("");
       setStatusResult(await post<Result>("/public/service-requests/status", data));
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  async function submitFeedback(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!statusLookup) return;
+    setError("");
+    const data = Object.fromEntries(new FormData(e.currentTarget).entries());
+    try {
+      const response = await post<{message:string}>("/public/service-requests/feedback", {
+        ...statusLookup,
+        rating: Number(data.rating),
+        comment: data.comment,
+      });
+      setFeedbackMessage(response.message);
+      setStatusResult((current) => current ? {...current, feedback_submitted:true} : current);
+      e.currentTarget.reset();
     } catch (err) {
       setError((err as Error).message);
     }
@@ -98,7 +121,7 @@ export default function PedidoPage() {
               <input className="field" name="customer_email" type="email" placeholder="Email (opcional)" />
               <select className="field" name="category_id" required><option value="">Categoria</option>{categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
               <textarea className="field md:col-span-2 min-h-36" name="description" placeholder="Descreva o serviço de que precisa" required />
-              <label className="md:col-span-2 text-sm text-slate-600"><input type="checkbox" required className="mr-2" />Autorizo o tratamento dos meus dados para responder a este pedido.</label>
+              <label className="md:col-span-2 text-sm text-slate-600"><input type="checkbox" required className="mr-2" />Autorizo o tratamento dos meus dados para responder a este pedido, conforme a <Link className="font-bold underline" href="/privacidade" target="_blank">Política de Privacidade</Link>.</label>
               <button className="btn md:col-span-2">Enviar pedido</button>
             </form>
           </section>
@@ -111,6 +134,8 @@ export default function PedidoPage() {
               <button className="btn w-full bg-white !text-slate-950">Consultar</button>
             </form>
             {statusResult && <div className="mt-5 p-4 bg-slate-900 rounded-xl"><div className="text-slate-400 text-sm">{statusResult.reference}</div><div className="text-xl font-black mt-1">{statusResult.status}</div></div>}
+            {statusResult?.status==='completed'&&!statusResult.feedback_submitted&&<form onSubmit={submitFeedback} className="mt-4 space-y-3"><div className="font-bold">Como correu o serviço?</div><select className="field text-slate-950" name="rating" defaultValue="5"><option value="5">5 · Excelente</option><option value="4">4 · Muito bom</option><option value="3">3 · Bom</option><option value="2">2 · Regular</option><option value="1">1 · Mau</option></select><textarea className="field text-slate-950 min-h-24" name="comment" placeholder="Comentário opcional"/><button className="btn w-full bg-white !text-slate-950">Enviar avaliação</button></form>}
+            {(feedbackMessage||statusResult?.feedback_submitted)&&<div className="mt-4 text-sm text-emerald-300">{feedbackMessage||'Avaliação já recebida. Obrigado.'}</div>}
           </aside>
         </div>
       </div>

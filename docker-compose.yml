@@ -68,7 +68,13 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: ["sh", "-c", "if [ ! -f vendor/autoload.php ]; then composer install --no-interaction --prefer-dist; fi; if [ ! -f bootstrap/cache/packages.php ]; then php artisan package:discover; fi; php artisan config:clear >/dev/null 2>&1 || true; php artisan migrate --force; php artisan storage:link >/dev/null 2>&1 || true; exec php artisan serve --no-reload --host=0.0.0.0 --port=8000"]
+    command: ["sh", "-c", "if [ ! -f vendor/autoload.php ]; then composer install --no-interaction --prefer-dist; fi; if [ ! -f bootstrap/cache/packages.php ]; then php artisan package:discover; fi; php artisan config:clear >/dev/null 2>&1 || true; php artisan migrate --force; php artisan db:seed --force; php artisan storage:link >/dev/null 2>&1 || true; exec php artisan serve --no-reload --host=0.0.0.0 --port=8000"]
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit(@file_get_contents('http://127.0.0.1:8000/api/v1/health') ? 0 : 1);"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
 
   queue:
     build:
@@ -124,8 +130,15 @@ services:
     ports:
       - "3001:3000"
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     command: ["sh", "-c", "npm install --no-audit --no-fund; exec npm run dev -- --hostname 0.0.0.0 --port 3000"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
 
 volumes:
   pgdata:

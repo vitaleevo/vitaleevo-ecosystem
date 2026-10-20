@@ -97,3 +97,48 @@ docker compose down -v
 - `apps/api/Dockerfile` — PHP 8.3 + `pdo_pgsql` + extensão Redis
 - `apps/web/Dockerfile` — Node 24
 - `apps/api/.dockerignore` e `apps/web/.dockerignore`
+
+## Saúde e smoke test
+
+A API expõe readiness em `GET /api/v1/health`, verificando PostgreSQL e cache Redis. API, banco,
+Redis e frontend possuem healthchecks no Compose.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\smoke.ps1
+node .\scripts\load-smoke.mjs http://127.0.0.1:8000/api/v1/plans 100 10
+```
+
+O endpoint `/health` tem rate limit e não deve ser usado como alvo de carga intensiva. O servidor
+Laravel roda com `artisan serve --no-reload` no Compose porque, no Laravel 13, o processo filho do
+servidor de desenvolvimento pode filtrar variáveis Docker ao recarregar a partir do `.env` local.
+
+## Testes
+
+```powershell
+docker compose exec -T api php artisan test
+docker compose exec -T api vendor/bin/pint --test
+cd apps/web
+npm run lint
+npm run build
+```
+
+A suíte Laravel força SQLite em memória, cache/sessão `array` e fila síncrona antes do bootstrap.
+Isto impede `RefreshDatabase` de tocar no PostgreSQL de desenvolvimento e impede rate limits de
+testes de persistirem no Redis local.
+
+## Backup e restauração local
+
+Criar um dump PostgreSQL em formato custom:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\backup.ps1
+```
+
+Restaurar de forma destrutiva apenas quando for intencional:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\restore.ps1 -BackupPath .\backups\vitaleevo-AAAAMMDD-HHMMSS.dump -Force
+```
+
+Estes scripts são para o ambiente Docker/local e para drills. Em produção, os backups precisam de
+retenção independente, encriptação e cópia fora do mesmo host.

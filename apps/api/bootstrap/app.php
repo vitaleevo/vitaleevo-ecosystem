@@ -1,8 +1,10 @@
 <?php
 
 use App\Http\Middleware\EnsureEmailVerified;
+use App\Http\Middleware\EnsureOwnerMfa;
 use App\Http\Middleware\EnsurePlatformOwner;
 use App\Http\Middleware\EnsureTenantContext;
+use App\Http\Middleware\EnsureTermsAccepted;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -20,6 +22,8 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'tenant' => EnsureTenantContext::class,
             'platform_owner' => EnsurePlatformOwner::class,
+            'owner_mfa' => EnsureOwnerMfa::class,
+            'terms_accepted' => EnsureTermsAccepted::class,
             'verified_email' => EnsureEmailVerified::class,
         ]);
     })

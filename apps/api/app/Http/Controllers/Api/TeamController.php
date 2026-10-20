@@ -52,6 +52,7 @@ class TeamController extends BaseApiController
                 ['role' => $data['role'], 'status' => 'active']
             );
             $this->audit($request, 'member_added', 'membership', $membership->id, ['user_id' => $existingUser->id, 'role' => $data['role']]);
+
             return response()->json(['membership' => $membership, 'invitation' => null], 201);
         }
 
@@ -103,6 +104,7 @@ class TeamController extends BaseApiController
         ]));
 
         $this->audit($request, 'member_updated', 'membership', $membership->id);
+
         return response()->json($membership);
     }
 }

@@ -13,6 +13,20 @@ abstract class BaseApiController extends Controller
         return (int) $request->attributes->get('tenant_id');
     }
 
+    protected function enforceBetaCapacity(string $resource, int $currentCount): void
+    {
+        if (! config('vitaleevo.beta.enabled')) {
+            return;
+        }
+
+        $limits = [
+            'tenants' => (int) config('vitaleevo.beta.max_tenants', 5),
+            'professionals' => (int) config('vitaleevo.beta.max_professionals', 10),
+        ];
+        $limit = $limits[$resource] ?? 0;
+        abort_if($limit > 0 && $currentCount >= $limit, 403, 'O piloto beta atingiu a capacidade configurada.');
+    }
+
     protected function audit(Request $request, string $action, string $type, int|string|null $id = null, array $metadata = []): void
     {
         AuditLog::create([

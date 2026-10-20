@@ -28,3 +28,7 @@ build/
 # Artefactos temporários
 *.tmp
 *.bak
+
+# Backups locais gerados pelos scripts
+backups/*.dump
+backups/*.sql
