@@ -1,0 +1,30 @@
+# Sistema operativo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editores / IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# Ficheiros de ambiente (nunca versionar segredos)
+.env
+.env.*
+!.env.example
+
+# Dependências e builds (cada app tem o seu .gitignore; reforço na raiz)
+node_modules/
+vendor/
+.next/
+out/
+dist/
+build/
+
+# Artefactos temporários
+*.tmp
+*.bak
