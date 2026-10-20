@@ -107,9 +107,9 @@ export default function PedidoPage() {
   return (
     <main className="min-h-screen bg-white text-slate-900 p-5 md:p-10">
       <div className="max-w-6xl mx-auto">
-        <Link href="/" className="font-black text-xl text-[#481468]">VITALEEVO</Link>
+        <Link href="/" className="font-black text-xl text-[#2563EB]">VITALEEVO</Link>
         <div className="grid lg:grid-cols-[1.3fr_.7fr] gap-6 mt-10">
-          <section className="bg-white text-slate-950 rounded-3xl border border-[#E8DFEE] p-6 md:p-10 shadow-sm">
+          <section className="bg-white text-slate-950 rounded-3xl border border-[#DBEAFE] p-6 md:p-10 shadow-sm">
             <p className="text-sm font-bold text-slate-500">SOLICITAR SERVIÇO</p>
             <h1 className="text-4xl font-black mt-2">Diga-nos o que precisa.</h1>
             <p className="text-slate-500 mt-3 mb-7">A equipa Vitaleevo recebe o pedido, faz a triagem e encaminha para a operação adequada.</p>
@@ -125,15 +125,15 @@ export default function PedidoPage() {
               <button className="btn md:col-span-2">Enviar pedido</button>
             </form>
           </section>
-          <aside className="rounded-3xl border border-[#E8DFEE] bg-[#F8F3FA] p-6 md:p-8 h-fit">
-            <p className="text-sm font-bold text-[#481468]">ACOMPANHAR PEDIDO</p>
+          <aside className="rounded-3xl border border-[#DBEAFE] bg-[#F8FAFC] p-6 md:p-8 h-fit">
+            <p className="text-sm font-bold text-[#2563EB]">ACOMPANHAR PEDIDO</p>
             <h2 className="text-2xl font-black mt-2">Consulte o estado.</h2>
             <form onSubmit={checkStatus} className="space-y-3 mt-5">
               <input className="field" name="reference" placeholder="Ex.: SR-XXXXXXXXXX" required />
               <input className="field" name="customer_phone" placeholder="Mesmo telefone do pedido" required />
               <button className="btn w-full">Consultar</button>
             </form>
-            {statusResult && <div className="mt-5 p-4 bg-white border border-[#E8DFEE] rounded-xl"><div className="text-[#481468] text-sm font-bold">{statusResult.reference}</div><div className="text-xl font-black mt-1">{statusResult.status}</div></div>}
+            {statusResult && <div className="mt-5 p-4 bg-white border border-[#DBEAFE] rounded-xl"><div className="text-[#2563EB] text-sm font-bold">{statusResult.reference}</div><div className="text-xl font-black mt-1">{statusResult.status}</div></div>}
             {statusResult?.status==='completed'&&!statusResult.feedback_submitted&&<form onSubmit={submitFeedback} className="mt-4 space-y-3"><div className="font-bold">Como correu o serviço?</div><select className="field" name="rating" defaultValue="5"><option value="5">5 · Excelente</option><option value="4">4 · Muito bom</option><option value="3">3 · Bom</option><option value="2">2 · Regular</option><option value="1">1 · Mau</option></select><textarea className="field min-h-24" name="comment" placeholder="Comentário opcional"/><button className="btn w-full">Enviar avaliação</button></form>}
             {(feedbackMessage||statusResult?.feedback_submitted)&&<div className="mt-4 text-sm text-emerald-700">{feedbackMessage||'Avaliação já recebida. Obrigado.'}</div>}
           </aside>
