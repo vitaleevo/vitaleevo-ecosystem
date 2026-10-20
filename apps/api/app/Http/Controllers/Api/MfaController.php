@@ -32,6 +32,23 @@ class MfaController extends BaseApiController
         ]);
     }
 
+    public function rotateSetup(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        abort_unless($user->is_platform_owner, 403, 'MFA reforçado está reservado ao Platform Owner.');
+        abort_if($user->mfa_enabled_at, 422, 'MFA já está ativo.');
+
+        $secret = Totp::generateSecret();
+        $request->session()->put('mfa_pending_secret', $secret);
+        $this->audit($request, 'rotated_setup_secret', 'mfa', $user->id);
+
+        return response()->json([
+            'enabled' => false,
+            'secret' => $secret,
+            'provisioning_uri' => Totp::provisioningUri($secret, $user->email),
+        ]);
+    }
+
     public function enable(Request $request): JsonResponse
     {
         $user = $request->user();

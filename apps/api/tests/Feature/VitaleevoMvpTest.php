@@ -337,8 +337,14 @@ class VitaleevoMvpTest extends TestCase
             ->assertJsonStructure(['secret', 'provisioning_uri']);
         $secret = $setup->json('secret');
 
+        $rotated = $this->postJson('/api/v1/auth/mfa/setup/rotate')
+            ->assertOk()
+            ->assertJsonStructure(['secret', 'provisioning_uri']);
+        $rotatedSecret = $rotated->json('secret');
+        $this->assertNotSame($secret, $rotatedSecret);
+
         $enabled = $this->postJson('/api/v1/auth/mfa/enable', [
-            'code' => Totp::code($secret),
+            'code' => Totp::code($rotatedSecret),
         ])->assertOk()->assertJsonCount(8, 'recovery_codes');
         $recoveryCode = $enabled->json('recovery_codes.0');
 

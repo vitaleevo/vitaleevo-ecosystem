@@ -29,6 +29,7 @@ Route::prefix('v1')->group(function () {
         Route::post('/auth/accept-terms', [AuthController::class, 'acceptTerms'])->middleware('throttle:10,1');
         Route::post('/auth/verification-notification', [AuthController::class, 'resendVerification'])->middleware('throttle:3,1');
         Route::get('/auth/mfa/setup', [MfaController::class, 'setup'])->middleware(['terms_accepted', 'verified_email', 'throttle:10,1']);
+        Route::post('/auth/mfa/setup/rotate', [MfaController::class, 'rotateSetup'])->middleware(['terms_accepted', 'verified_email', 'throttle:5,1']);
         Route::post('/auth/mfa/enable', [MfaController::class, 'enable'])->middleware(['terms_accepted', 'verified_email', 'throttle:10,1']);
         Route::post('/auth/mfa/verify', [MfaController::class, 'verify'])->middleware(['terms_accepted', 'verified_email', 'throttle:10,1']);
         Route::post('/auth/mfa/recovery-codes', [MfaController::class, 'regenerateRecoveryCodes'])->middleware(['terms_accepted', 'verified_email', 'throttle:5,1']);
