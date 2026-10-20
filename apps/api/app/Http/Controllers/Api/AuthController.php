@@ -29,11 +29,13 @@ class AuthController extends BaseApiController
             'name' => ['required', 'string', 'max:120'],
             'email' => ['required', 'email', 'max:190', 'unique:users,email'],
             'password' => ['required', 'confirmed', Password::min(8)->letters()->numbers()],
-            'company_name' => ['required', 'string', 'max:160'],
+            'company_name' => ['nullable', 'string', 'max:160'],
             'plan_code' => ['nullable', 'in:trial,basic,advanced'],
             'terms_accepted' => ['accepted'],
         ]);
-        $this->enforceBetaCapacity('tenants', Tenant::count());
+        if (filled($data['company_name'] ?? null)) {
+            $this->enforceBetaCapacity('tenants', Tenant::count());
+        }
 
         $user = DB::transaction(function () use ($data) {
             $user = User::create([
@@ -46,28 +48,30 @@ class AuthController extends BaseApiController
             ]);
             $user->forceFill(['accepted_terms_at' => now()])->save();
 
-            $base = Str::slug($data['company_name']) ?: 'empresa';
-            $slug = $base.'-'.Str::lower(Str::random(6));
-            $planCode = $data['plan_code'] ?? 'trial';
-            $defaults = [
-                'trial' => ['name' => 'Teste', 'price_kz' => 0],
-                'basic' => ['name' => 'Básico', 'price_kz' => 50000],
-                'advanced' => ['name' => 'Avançado', 'price_kz' => 200000],
-            ][$planCode];
-            $plan = Plan::firstOrCreate(['code' => $planCode], $defaults + ['active' => true]);
-            $tenant = Tenant::create(['name' => $data['company_name'], 'slug' => $slug, 'plan' => $planCode]);
-            Membership::create(['tenant_id' => $tenant->id, 'user_id' => $user->id, 'role' => 'owner']);
-            Subscription::create([
-                'tenant_id' => $tenant->id,
-                'plan_id' => $plan->id,
-                'status' => $planCode === 'trial' ? 'trialing' : 'active',
-                'trial_ends_at' => $planCode === 'trial' ? now()->addDays(3) : null,
-            ]);
-            $user->update(['current_tenant_id' => $tenant->id]);
+            if (filled($data['company_name'] ?? null)) {
+                $base = Str::slug($data['company_name']) ?: 'empresa';
+                $slug = $base.'-'.Str::lower(Str::random(6));
+                $planCode = $data['plan_code'] ?? 'trial';
+                $defaults = [
+                    'trial' => ['name' => 'Teste', 'price_kz' => 0],
+                    'basic' => ['name' => 'Básico', 'price_kz' => 50000],
+                    'advanced' => ['name' => 'Avançado', 'price_kz' => 200000],
+                ][$planCode];
+                $plan = Plan::firstOrCreate(['code' => $planCode], $defaults + ['active' => true]);
+                $tenant = Tenant::create(['name' => $data['company_name'], 'slug' => $slug, 'plan' => $planCode]);
+                Membership::create(['tenant_id' => $tenant->id, 'user_id' => $user->id, 'role' => 'owner']);
+                Subscription::create([
+                    'tenant_id' => $tenant->id,
+                    'plan_id' => $plan->id,
+                    'status' => $planCode === 'trial' ? 'trialing' : 'active',
+                    'trial_ends_at' => $planCode === 'trial' ? now()->addDays(3) : null,
+                ]);
+                $user->update(['current_tenant_id' => $tenant->id]);
 
-            $pipeline = Pipeline::create(['tenant_id' => $tenant->id, 'name' => 'Funil Comercial', 'is_default' => true]);
-            foreach (['Novo', 'Qualificado', 'Proposta', 'Negociação', 'Ganho'] as $position => $name) {
-                PipelineStage::create(['tenant_id' => $tenant->id, 'pipeline_id' => $pipeline->id, 'name' => $name, 'position' => $position]);
+                $pipeline = Pipeline::create(['tenant_id' => $tenant->id, 'name' => 'Funil Comercial', 'is_default' => true]);
+                foreach (['Novo', 'Qualificado', 'Proposta', 'Negociação', 'Ganho'] as $position => $name) {
+                    PipelineStage::create(['tenant_id' => $tenant->id, 'pipeline_id' => $pipeline->id, 'name' => $name, 'position' => $position]);
+                }
             }
 
             return $user;

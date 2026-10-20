@@ -233,10 +233,10 @@ class CrmController extends BaseApiController
             'priority' => ['sometimes', 'in:low,normal,high'], 'status' => ['sometimes', 'in:pending,done'],
         ]);
         if (isset($data['assigned_to'])) {
-            abort_unless(Membership::where('tenant_id',$tenant)->where('user_id',$data['assigned_to'])->where('status','active')->exists(),422,'Responsável inválido para este workspace.');
+            abort_unless(Membership::where('tenant_id', $tenant)->where('user_id', $data['assigned_to'])->where('status', 'active')->exists(), 422, 'Responsável inválido para este workspace.');
         }
         $item->update($data);
-        $this->audit($request,'updated','task',$item->id);
+        $this->audit($request, 'updated', 'task', $item->id);
 
         return response()->json($item);
     }

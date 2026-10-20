@@ -65,11 +65,11 @@ function PersonalWorkspace({me,reloadMe}:{me:Me;reloadMe:()=>void}) {
     }catch(e){setError((e as Error).message)}finally{setCreating(false)}
   }
   async function logout(){await api("/auth/logout",{method:"POST"});location.reload()}
-  return <main className="min-h-screen bg-[#FAF7FC] p-5 md:p-12">
+  return <main className="min-h-screen bg-[#F8FAFC] p-5 md:p-12">
     <div className="mx-auto max-w-4xl">
       <div className="flex flex-wrap justify-between gap-4 items-center"><div className="text-xl font-black text-[#2563EB]">VITALEEVO ECOSYSTEM</div><button className="text-sm font-bold text-[#2563EB]" onClick={logout}>Sair</button></div>
       <div className="card p-7 md:p-10 mt-10">
-        <div className="text-sm font-black uppercase tracking-wider text-[#6D3787]">Conta pessoal</div>
+        <div className="text-sm font-black uppercase tracking-wider text-[#1D4ED8]">Conta pessoal</div>
         <h1 className="text-3xl font-black mt-3">Bem-vindo, {me.user.name}.</h1>
         <p className="mt-3 text-slate-600 max-w-xl">A sua conta Vitaleevo está pronta. Pode apresentar os seus serviços, montar uma vitrine comercial e explorar as oportunidades do ecossistema. Não precisa de criar uma empresa para ter uma vitrine pessoal.</p>
         <Link href="/ecossistema" className="btn inline-block mt-6">Explorar aplicações e gerir vitrines →</Link>

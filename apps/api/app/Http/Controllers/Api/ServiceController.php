@@ -126,6 +126,10 @@ class ServiceController extends BaseApiController
         $data = $request->validate([
             'status' => ['sometimes', 'in:submitted,triage,assigned,in_progress,completed,cancelled'],
         ]);
+        if (($data['status'] ?? null) === 'completed'
+            && DB::table('jobs_request_targets')->where('service_request_id', $item->id)->exists()) {
+            abort(409, 'A conclusão de trabalhos Jobs exige validação pela operação Vitaleevo.');
+        }
         $item->update($data);
         $this->notifyCustomer($item->fresh());
         $this->audit($request, 'updated', 'service_request', $item->id);
@@ -204,6 +208,23 @@ class ServiceController extends BaseApiController
         $professional = Professional::where('user_id', $request->user()->id)->firstOrFail();
         $assignment = ServiceAssignment::where('professional_id', $professional->id)->findOrFail($id);
         $data = $request->validate(['status' => ['required', 'in:accepted,rejected,in_progress,completed']]);
+        $isJobs = DB::table('jobs_request_targets')
+            ->where('service_request_id', $assignment->request_id)->exists();
+        if ($isJobs) {
+            $currentRequest = ServiceRequest::findOrFail($assignment->request_id);
+            abort_if(in_array($currentRequest->status, ['cancelled', 'completed'], true), 409,
+                'Este pedido já está encerrado.');
+            $allowed = [
+                'assigned' => ['accepted', 'rejected'],
+                'accepted' => ['in_progress', 'rejected'],
+                'in_progress' => ['completed'],
+                'rejected' => [],
+                'completed' => [],
+            ];
+            abort_unless(in_array($data['status'], $allowed[$assignment->status] ?? [], true), 409,
+                'Transição inválida para este trabalho.');
+        }
+
         $assignment->update($data);
 
         $serviceRequest = ServiceRequest::findOrFail($assignment->request_id);
@@ -211,10 +232,14 @@ class ServiceController extends BaseApiController
             $serviceRequest->update(['status' => 'in_progress']);
         }
         if ($data['status'] === 'completed') {
-            $serviceRequest->update(['status' => 'completed']);
+            // Jobs: a entrega aguarda validação da operação antes do estado completed.
+            $serviceRequest->update(['status' => $isJobs ? 'delivered' : 'completed']);
         }
         if ($data['status'] === 'accepted') {
             $serviceRequest->update(['status' => 'assigned']);
+        }
+        if ($data['status'] === 'rejected' && $isJobs) {
+            $serviceRequest->update(['status' => 'triage']);
         }
         if ($data['status'] !== 'rejected') {
             $this->notifyCustomer($serviceRequest->fresh());

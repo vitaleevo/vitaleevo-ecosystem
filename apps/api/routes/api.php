@@ -2,7 +2,9 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CrmController;
+use App\Http\Controllers\Api\EcosystemController;
 use App\Http\Controllers\Api\HealthController;
+use App\Http\Controllers\Api\JobsController;
 use App\Http\Controllers\Api\MfaController;
 use App\Http\Controllers\Api\PlatformController;
 use App\Http\Controllers\Api\ServiceController;
@@ -11,6 +13,29 @@ use App\Http\Controllers\Api\TenantController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function () {
+    // Vitaleevo Ecosystem: catálogo público, vitrines e gestão por titular.
+    Route::get('/ecosystem/modules', [EcosystemController::class, 'modules']);
+    Route::get('/ecosystem/storefronts', [EcosystemController::class, 'publicStorefronts'])->middleware('throttle:60,1');
+    Route::get('/ecosystem/storefronts/{slug}', [EcosystemController::class, 'publicStorefront'])->middleware('throttle:60,1');
+    Route::middleware(['auth:sanctum', 'terms_accepted', 'verified_email'])->group(function () {
+        Route::get('/ecosystem/mine', [EcosystemController::class, 'mine']);
+        Route::post('/ecosystem/storefronts', [EcosystemController::class, 'createStorefront'])->middleware('throttle:10,1');
+        Route::patch('/ecosystem/storefronts/{id}', [EcosystemController::class, 'updateStorefront']);
+        Route::post('/ecosystem/storefronts/{id}/listings', [EcosystemController::class, 'addListing']);
+    });
+    // Vitaleevo Jobs: vitrine -> pedido -> operação -> profissional -> validação.
+    Route::post('/jobs/requests', [JobsController::class, 'submit'])->middleware('throttle:12,1');
+    Route::middleware(['auth:sanctum', 'terms_accepted', 'verified_email'])->group(function () {
+        Route::get('/jobs/professional/me', [JobsController::class, 'professionalProfile']);
+        Route::post('/jobs/professional/apply', [JobsController::class, 'applyProfessional'])->middleware('throttle:5,1');
+        Route::get('/jobs/my-requests', [JobsController::class, 'myRequests']);
+    });
+    Route::middleware(['auth:sanctum', 'platform_owner', 'terms_accepted', 'verified_email', 'owner_mfa'])
+        ->prefix('platform/jobs')->group(function () {
+            Route::get('/requests', [JobsController::class, 'operatorRequests']);
+            Route::post('/requests/{id}/route', [JobsController::class, 'routeRequest']);
+            Route::post('/requests/{id}/complete', [JobsController::class, 'complete']);
+        });
     Route::get('/health', HealthController::class)->middleware('throttle:60,1');
     Route::post('/auth/register', [AuthController::class, 'register'])->middleware('throttle:10,1');
     Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
