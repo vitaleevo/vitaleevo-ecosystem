@@ -1,0 +1,135 @@
+name: vitaleevo
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: vitaleevo-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: vitaleevo
+      POSTGRES_USER: vitaleevo
+      POSTGRES_PASSWORD: vitaleevo
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vitaleevo -d vitaleevo"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    container_name: vitaleevo-redis
+    restart: unless-stopped
+    ports:
+      - "6380:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    image: vitaleevo-api:dev
+    container_name: vitaleevo-api
+    working_dir: /var/www/html
+    volumes:
+      - ./apps/api:/var/www/html
+      - api_vendor:/var/www/html/vendor
+    environment:
+      APP_ENV: local
+      APP_DEBUG: "true"
+      APP_URL: http://localhost:8000
+      FRONTEND_URL: http://localhost:3001
+      SANCTUM_STATEFUL_DOMAINS: localhost:3001,127.0.0.1:3001,localhost,127.0.0.1
+      DB_CONNECTION: pgsql
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_DATABASE: vitaleevo
+      DB_USERNAME: vitaleevo
+      DB_PASSWORD: vitaleevo
+      REDIS_CLIENT: phpredis
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      CACHE_STORE: redis
+      QUEUE_CONNECTION: redis
+      SESSION_DRIVER: redis
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["sh", "-c", "if [ ! -f vendor/autoload.php ]; then composer install --no-interaction --prefer-dist; fi; if [ ! -f bootstrap/cache/packages.php ]; then php artisan package:discover; fi; php artisan config:clear >/dev/null 2>&1 || true; php artisan migrate --force; php artisan storage:link >/dev/null 2>&1 || true; exec php artisan serve --no-reload --host=0.0.0.0 --port=8000"]
+
+  queue:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    image: vitaleevo-api:dev
+    container_name: vitaleevo-queue
+    working_dir: /var/www/html
+    volumes:
+      - ./apps/api:/var/www/html
+      - api_vendor:/var/www/html/vendor
+    environment:
+      APP_ENV: local
+      APP_DEBUG: "true"
+      APP_URL: http://localhost:8000
+      FRONTEND_URL: http://localhost:3001
+      SANCTUM_STATEFUL_DOMAINS: localhost:3001,127.0.0.1:3001,localhost,127.0.0.1
+      DB_CONNECTION: pgsql
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_DATABASE: vitaleevo
+      DB_USERNAME: vitaleevo
+      DB_PASSWORD: vitaleevo
+      REDIS_CLIENT: phpredis
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      CACHE_STORE: redis
+      QUEUE_CONNECTION: redis
+      SESSION_DRIVER: redis
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["sh", "-c", "if [ ! -f vendor/autoload.php ]; then composer install --no-interaction --prefer-dist; fi; if [ ! -f bootstrap/cache/packages.php ]; then php artisan package:discover; fi; php artisan config:clear >/dev/null 2>&1 || true; exec php artisan queue:work --sleep=3 --tries=3"]
+
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+    image: vitaleevo-web:dev
+    container_name: vitaleevo-web
+    working_dir: /app
+    volumes:
+      - ./apps/web:/app
+      - web_node_modules:/app/node_modules
+      - web_next:/app/.next
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+      WATCHPACK_POLLING: "true"
+      CHOKIDAR_USEPOLLING: "true"
+      NODE_ENV: development
+    ports:
+      - "3001:3000"
+    depends_on:
+      - api
+    command: ["sh", "-c", "npm install --no-audit --no-fund; exec npm run dev -- --hostname 0.0.0.0 --port 3000"]
+
+volumes:
+  pgdata:
+  redisdata:
+  api_vendor:
+  web_node_modules:
+  web_next:

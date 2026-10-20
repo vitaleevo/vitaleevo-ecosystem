@@ -1,32 +1,18 @@
 @import "tailwindcss";
 
-/* Tokens de design — ver documento 05-FRONTEND-DESIGN-SYSTEM.md */
-:root {
-  --primary: #155eef;
-  --surface: #ffffff;
-  --background: #f8fafc;
-  --foreground: #101828;
-  --muted: #667085;
-  --success: #12b76a;
-  --warning: #f79009;
-  --danger: #f04438;
-}
-
-@theme inline {
-  --color-primary: var(--primary);
-  --color-surface: var(--surface);
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-muted: var(--muted);
-  --color-success: var(--success);
-  --color-warning: var(--warning);
-  --color-danger: var(--danger);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
-}
+:root { --bg:#f5f7fb; --ink:#111827; --muted:#64748b; --brand:#111827; }
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--ink); font-family:Arial, Helvetica, sans-serif; }
+button,input,select,textarea { font:inherit; }
+button { cursor:pointer; }
+.card { background:white; border:1px solid #e5e7eb; border-radius:18px; box-shadow:0 8px 30px rgba(15,23,42,.05); }
+.field { width:100%; border:1px solid #dbe2ea; border-radius:12px; padding:.75rem .9rem; background:white; outline:none; }
+.field:focus { border-color:#111827; box-shadow:0 0 0 3px rgba(17,24,39,.08); }
+.btn { border:0; border-radius:12px; padding:.72rem 1rem; font-weight:700; background:#111827; color:white; }
+.btn.secondary { background:white; color:#111827; border:1px solid #dbe2ea; }
+.btn.danger { background:#991b1b; }
+.badge { display:inline-flex; padding:.2rem .55rem; border-radius:999px; background:#eef2ff; font-size:.75rem; font-weight:700; }
+.table { width:100%; border-collapse:collapse; }
+.table th,.table td { text-align:left; padding:.8rem; border-bottom:1px solid #eef2f7; vertical-align:top; }
+.table th { color:#64748b; font-size:.78rem; text-transform:uppercase; letter-spacing:.04em; }
+@media (max-width:900px){ .desktop-nav{display:none!important}.shell{display:block!important}.content{padding:16px!important}.table-wrap{overflow:auto} }

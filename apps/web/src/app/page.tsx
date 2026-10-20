@@ -1,69 +1,117 @@
-import Image from "next/image";
+"use client";
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
-export default function Home() {
-  return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
-  );
+import Link from "next/link";
+import { FormEvent, useEffect, useState } from "react";
+
+const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+type Me = { user:{id:number;name:string;email:string;email_verified_at:string|null;current_tenant_id:number|null;is_platform_owner:boolean}; memberships:Array<{tenant_id:number;role:string;name:string;tenant_status:string}>; professional_id:number|null };
+type Dashboard = {contacts:number;open_opportunities:number;pipeline_value_kz:number;pending_tasks:number};
+type PageData<T> = {data:T[]};
+type Pipeline = {id:number;name:string;stages:Array<{id:number;name:string;position:number}>};
+
+async function csrf() {
+  await fetch(`${API}/sanctum/csrf-cookie`, { credentials:"include" });
 }
+
+function cookie(name:string){
+  if (typeof document === "undefined") return "";
+  const hit = document.cookie.split("; ").find(v=>v.startsWith(name+"="));
+  return hit ? decodeURIComponent(hit.split("=").slice(1).join("=")) : "";
+}
+
+async function api<T>(path:string, options:RequestInit = {}):Promise<T>{
+  const method = (options.method || "GET").toUpperCase();
+  if (!["GET","HEAD","OPTIONS"].includes(method)) await csrf();
+  const headers:Record<string,string> = {Accept:"application/json", ...(options.headers as Record<string,string> || {})};
+  if (options.body && !(options.body instanceof FormData)) headers["Content-Type"] = "application/json";
+  const token = cookie("XSRF-TOKEN");
+  if (token) headers["X-XSRF-TOKEN"] = token;
+  const response = await fetch(`${API}/api/v1${path}`, {...options, headers, credentials:"include"});
+  if (!response.ok) {
+    const error = await response.json().catch(()=>({message:"Erro inesperado"}));
+    throw new Error(error.message || Object.values(error.errors || {}).flat().join(" ") || `Erro ${response.status}`);
+  }
+  return response.status === 204 ? ({} as T) : response.json();
+}
+
+const money = (n:number) => new Intl.NumberFormat("pt-AO").format(n || 0)+" Kz";
+
+export default function Home(){
+  const [me,setMe]=useState<Me|null>(null); const [loading,setLoading]=useState(true); const [error,setError]=useState("");
+  const [tab,setTab]=useState("dashboard"); const [refresh,setRefresh]=useState(0);
+  useEffect(()=>{ api<Me>("/me").then(setMe).catch(()=>setMe(null)).finally(()=>setLoading(false)); },[refresh]);
+  if (loading) return <div className="min-h-screen grid place-items-center"><div className="card p-8">A carregar Vitaleevo…</div></div>;
+  if (!me) return <Auth onDone={()=>setRefresh(v=>v+1)} />;
+  if (!me.user.email_verified_at) return <VerificationView email={me.user.email} onReload={()=>setRefresh(v=>v+1)} />;
+  return <AppShell me={me} tab={tab} setTab={setTab} error={error} setError={setError} reloadMe={()=>setRefresh(v=>v+1)} />;
+}
+
+function VerificationView({email,onReload}:{email:string;onReload:()=>void}){const [message,setMessage]=useState('');const [error,setError]=useState('');async function resend(){try{const r=await api<any>('/auth/verification-notification',{method:'POST'});setMessage(r.message);setError('')}catch(e){setError((e as Error).message)}}return <main className="min-h-screen grid place-items-center p-6"><div className="card p-8 max-w-lg w-full"><div className="text-sm font-bold text-slate-500">VITALEEVO ECOSYSTEM</div><h1 className="text-3xl font-black mt-2">Verifique o seu email</h1><p className="text-slate-500 mt-3">Enviámos um link de verificação para <b>{email}</b>. Depois de abrir o link, volte aqui e atualize o acesso.</p>{message&&<div className="mt-4 p-3 rounded-xl bg-emerald-50 text-emerald-800 text-sm">{message}</div>}{error&&<div className="mt-4 p-3 rounded-xl bg-red-50 text-red-700 text-sm">{error}</div>}<div className="flex gap-3 mt-6"><button className="btn" onClick={onReload}>Já verifiquei</button><button className="btn secondary" onClick={resend}>Reenviar email</button></div></div></main>}
+
+function Auth({onDone}:{onDone:()=>void}){
+  const [mode,setMode]=useState<"login"|"register"|"forgot">("login"); const [error,setError]=useState(""); const [message,setMessage]=useState(""); const [inviteToken,setInviteToken]=useState(""); const [resetToken,setResetToken]=useState(""); const [resetEmail,setResetEmail]=useState("");
+  useEffect(()=>{const timer=window.setTimeout(()=>{const q=new URLSearchParams(window.location.search);setInviteToken(q.get('invite')||'');setResetToken(q.get('reset_token')||'');setResetEmail(q.get('email')||'')},0);return()=>window.clearTimeout(timer)},[]);
+  async function submit(e:FormEvent<HTMLFormElement>){ e.preventDefault(); setError(""); setMessage(""); const fd=new FormData(e.currentTarget); const payload:any=Object.fromEntries(fd.entries());
+    if(inviteToken) payload.token=inviteToken;
+    if(resetToken){payload.token=resetToken;payload.email=resetEmail}
+    const path=resetToken?"/auth/reset-password":inviteToken?"/auth/invitations/accept":mode==="forgot"?"/auth/forgot-password":mode==="login"?"/auth/login":"/auth/register";
+    try { const result=await api<any>(path,{method:"POST",body:JSON.stringify(payload)}); if(mode==="forgot"&&!inviteToken&&!resetToken){setMessage(result.message||'Verifique o seu email.');return} if(resetToken){window.history.replaceState({},'', '/');setResetToken('');setMode('login');setMessage('Palavra-passe atualizada. Já pode entrar.');return} window.history.replaceState({},'', '/'); onDone(); } catch(e){setError((e as Error).message);} }
+  return <main className="min-h-screen grid lg:grid-cols-2">
+    <section className="hidden lg:flex bg-slate-950 text-white p-16 flex-col justify-between"><div className="text-2xl font-black">VITALEEVO</div><div><h1 className="text-5xl font-black leading-tight">Negócio, clientes e serviços num único ambiente.</h1><p className="text-slate-300 mt-5 text-lg max-w-xl">CRM multiempresa, pedidos de serviço, profissionais e controlo operacional.</p></div><small className="text-slate-400">Vitaleevo Ecosystem</small></section>
+    <section className="grid place-items-center p-6"><form onSubmit={submit} className="card p-7 md:p-10 w-full max-w-md space-y-4"><div><div className="text-sm font-bold text-slate-500">VITALEEVO ECOSYSTEM</div><h2 className="text-3xl font-black mt-1">{resetToken?"Nova palavra-passe":inviteToken?"Aceitar convite":mode==="forgot"?"Recuperar acesso":mode==="login"?"Entrar":"Criar empresa"}</h2></div>{error&&<div className="p-3 rounded-xl bg-red-50 text-red-700 text-sm">{error}</div>}{message&&<div className="p-3 rounded-xl bg-emerald-50 text-emerald-800 text-sm">{message}</div>}
+      {(mode==="register"||inviteToken)&&!resetToken&&<input className="field" name="name" placeholder="Seu nome" required/>}
+      {mode==="register"&&!inviteToken&&!resetToken&&<input className="field" name="company_name" placeholder="Nome da empresa" required/>}
+      {!inviteToken&&!resetToken&&<input className="field" name="email" type="email" placeholder="Email" required/>}{resetToken&&<div className="text-sm text-slate-500">A redefinir acesso de <b>{resetEmail}</b></div>}
+      {mode!=="forgot"&&<input className="field" name="password" type="password" placeholder="Palavra-passe" required/>}
+      {(mode==="register"||inviteToken||resetToken)&&<input className="field" name="password_confirmation" type="password" placeholder="Confirmar palavra-passe" required/>}
+      <button className="btn w-full" type="submit">{resetToken?"Atualizar palavra-passe":inviteToken?"Aceitar e entrar":mode==="forgot"?"Enviar instruções":mode==="login"?"Entrar":"Criar conta"}</button>{!inviteToken&&!resetToken&&mode==="login"&&<><button className="w-full text-sm font-bold" type="button" onClick={()=>setMode('register')}>Ainda não tenho conta</button><button className="w-full text-sm text-slate-500" type="button" onClick={()=>setMode('forgot')}>Esqueci a palavra-passe</button></>}{!inviteToken&&!resetToken&&mode!=="login"&&<button className="w-full text-sm font-bold" type="button" onClick={()=>setMode('login')}>Voltar ao login</button>}{(inviteToken||resetToken)&&<Link className="block text-center text-sm font-bold" href="/">Cancelar</Link>}</form></section>
+  </main>
+}
+
+function AppShell({me,tab,setTab,error,setError,reloadMe}:{me:Me;tab:string;setTab:(v:string)=>void;error:string;setError:(v:string)=>void;reloadMe:()=>void}){
+  const nav=[['dashboard','Visão geral'],['contacts','Contactos'],['pipeline','Pipeline'],['tasks','Tarefas'],['services','Pedidos'],['professionals','Profissionais'],['team','Equipa'],['settings','Configurações']]; if(me.professional_id) nav.push(['jobs','Meus trabalhos']); if(me.user.is_platform_owner) nav.push(['owner','Owner']);
+  async function logout(){await api('/auth/logout',{method:'POST'}); location.reload();}
+  async function switchTenant(id:number){try{await api(`/tenants/${id}/switch`,{method:'POST'}); reloadMe();}catch(e){setError((e as Error).message)}}
+  return <div className="shell min-h-screen grid grid-cols-[250px_1fr]">
+    <aside className="desktop-nav bg-slate-950 text-white p-5 flex flex-col gap-2"><div className="text-xl font-black px-3 py-4">VITALEEVO</div>{nav.map(([id,label])=><button key={id} onClick={()=>setTab(id)} className={`text-left px-4 py-3 rounded-xl ${tab===id?'bg-white text-slate-950':'text-slate-300 hover:bg-slate-900'}`}>{label}</button>)}<div className="mt-auto p-3 text-sm text-slate-400">{me.user.name}<br/><button onClick={logout} className="text-white font-bold mt-2">Sair</button></div></aside>
+    <main className="content p-6 md:p-10"><header className="flex flex-wrap items-center justify-between gap-3 mb-7"><div><div className="text-sm text-slate-500">Workspace</div><select className="field !w-auto mt-1 font-bold" value={me.user.current_tenant_id||''} onChange={e=>switchTenant(Number(e.target.value))}>{me.memberships.filter(x=>x.tenant_status==='active').map(m=><option value={m.tenant_id} key={m.tenant_id}>{m.name} · {m.role}</option>)}</select></div><select className="field !w-auto md:hidden" value={tab} onChange={e=>setTab(e.target.value)}>{nav.map(([id,label])=><option value={id} key={id}>{label}</option>)}</select></header>
+      {error&&<div className="mb-5 p-3 rounded-xl bg-red-50 text-red-700">{error}<button onClick={()=>setError('')} className="float-right">×</button></div>}
+      {tab==='dashboard'&&<DashboardView setError={setError}/>} {tab==='contacts'&&<ContactsView setError={setError}/>} {tab==='pipeline'&&<PipelineView setError={setError}/>} {tab==='tasks'&&<TasksView setError={setError}/>} {tab==='services'&&<ServicesView setError={setError}/>} {tab==='professionals'&&<ProfessionalsView setError={setError} canManage={me.user.is_platform_owner}/>} {tab==='team'&&<TeamView setError={setError}/>} {tab==='settings'&&<SettingsView setError={setError} onSaved={reloadMe}/>} {tab==='jobs'&&me.professional_id&&<ProfessionalJobsView setError={setError}/>} {tab==='owner'&&me.user.is_platform_owner&&<OwnerView setError={setError}/>} </main>
+  </div>
+}
+
+function DashboardView({setError}:{setError:(v:string)=>void}){ const [d,setD]=useState<Dashboard|null>(null); useEffect(()=>{api<Dashboard>('/dashboard').then(setD).catch(e=>setError(e.message))},[setError]); const cards=d?[['Contactos',d.contacts],['Oportunidades abertas',d.open_opportunities],['Valor em pipeline',money(d.pipeline_value_kz)],['Tarefas pendentes',d.pending_tasks]]:[]; return <><h1 className="text-3xl font-black mb-2">Visão geral</h1><p className="text-slate-500 mb-6">Acompanhe a operação comercial do workspace.</p><div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-4">{cards.map(([k,v])=><div className="card p-6" key={k}><div className="text-sm text-slate-500">{k}</div><div className="text-3xl font-black mt-2">{v}</div></div>)}</div></> }
+
+function ContactsView({setError}:{setError:(v:string)=>void}){ const [items,setItems]=useState<any[]>([]); const [reload,setReload]=useState(0); useEffect(()=>{api<PageData<any>>('/contacts').then(r=>setItems(r.data)).catch(e=>setError(e.message))},[reload,setError]); async function addContact(e:FormEvent<HTMLFormElement>){e.preventDefault(); const fd=new FormData(e.currentTarget); try{await api('/contacts',{method:'POST',body:JSON.stringify(Object.fromEntries(fd.entries()))}); e.currentTarget.reset(); setReload(v=>v+1)}catch(e){setError((e as Error).message)}} return <><Title title="Contactos" subtitle="Pessoas e empresas que entram no seu funil."/><form onSubmit={addContact} className="card p-4 grid md:grid-cols-5 gap-3 mb-5"><input className="field" name="name" placeholder="Nome" required/><input className="field" name="email" type="email" placeholder="Email"/><input className="field" name="phone" placeholder="Telefone"/><input className="field" name="company" placeholder="Empresa"/><button className="btn">Adicionar</button></form><Table heads={['Nome','Empresa','Email','Telefone']} rows={items.map(x=>[x.name,x.company||'—',x.email||'—',x.phone||'—'])}/></> }
+
+function PipelineView({setError}:{setError:(v:string)=>void}){const [pipelines,setP]=useState<Pipeline[]>([]); const [ops,setOps]=useState<any[]>([]); const [contacts,setContacts]=useState<any[]>([]); const [reload,setReload]=useState(0); useEffect(()=>{Promise.all([api<Pipeline[]>('/pipelines'),api<PageData<any>>('/opportunities'),api<PageData<any>>('/contacts')]).then(([p,o,c])=>{setP(p);setOps(o.data);setContacts(c.data)}).catch(e=>setError(e.message))},[reload,setError]); const p=pipelines[0]; async function create(e:FormEvent<HTMLFormElement>){e.preventDefault(); if(!p)return; const fd=new FormData(e.currentTarget); const data:any=Object.fromEntries(fd.entries()); data.pipeline_id=p.id; data.pipeline_stage_id=Number(data.pipeline_stage_id); data.contact_id=data.contact_id?Number(data.contact_id):null; data.value=Number(data.value||0); try{await api('/opportunities',{method:'POST',body:JSON.stringify(data)});e.currentTarget.reset();setReload(v=>v+1)}catch(e){setError((e as Error).message)}} async function move(id:number,stage:number){try{await api(`/opportunities/${id}`,{method:'PATCH',body:JSON.stringify({pipeline_stage_id:stage})});setReload(v=>v+1)}catch(e){setError((e as Error).message)}} return <><Title title="Pipeline" subtitle="Oportunidades e etapas do processo comercial."/>{p&&<form onSubmit={create} className="card p-4 grid md:grid-cols-5 gap-3 mb-5"><input className="field" name="title" placeholder="Oportunidade" required/><select className="field" name="contact_id"><option value="">Sem contacto</option>{contacts.map(c=><option value={c.id} key={c.id}>{c.name}</option>)}</select><select className="field" name="pipeline_stage_id">{p.stages.map(s=><option value={s.id} key={s.id}>{s.name}</option>)}</select><input className="field" name="value" type="number" min="0" placeholder="Valor Kz"/><button className="btn">Criar</button></form>}<div className="grid md:grid-cols-2 xl:grid-cols-5 gap-3">{p?.stages.map(s=><div className="card p-3" key={s.id}><h3 className="font-black p-2">{s.name}</h3><div className="space-y-2">{ops.filter(o=>o.pipeline_stage_id===s.id).map(o=><div className="border rounded-xl p-3" key={o.id}><b>{o.title}</b><div className="text-sm text-slate-500 mt-1">{money(o.value)}</div><select className="field mt-2 !py-1 text-sm" value={o.pipeline_stage_id} onChange={e=>move(o.id,Number(e.target.value))}>{p.stages.map(st=><option value={st.id} key={st.id}>{st.name}</option>)}</select><OpportunityHistoryView id={o.id}/></div>)}</div></div>)}</div></>}
+
+function OpportunityHistoryView({id}:{id:number}){const [open,setOpen]=useState(false);const [items,setItems]=useState<any[]>([]);async function toggle(){const next=!open;setOpen(next);if(next&&items.length===0){try{setItems(await api<any[]>(`/opportunities/${id}/history`))}catch{setItems([])}}}return <div className="mt-2"><button className="text-xs font-bold text-slate-500" type="button" onClick={toggle}>{open?'Fechar histórico':'Ver histórico'}</button>{open&&<div className="mt-2 border-t pt-2 space-y-1">{items.map(h=><div key={h.id} className="text-xs text-slate-500">{new Date(h.created_at).toLocaleString('pt-AO')} · {h.event}{h.from_status!==h.to_status?` · ${h.from_status||'—'} → ${h.to_status||'—'}`:''}</div>)}</div>}</div>}
+
+function TasksView({setError}:{setError:(v:string)=>void}){const [items,setItems]=useState<any[]>([]);const [members,setMembers]=useState<any[]>([]);const [reload,setReload]=useState(0);useEffect(()=>{Promise.all([api<PageData<any>>('/tasks'),api<{members:any[]}>('/memberships')]).then(([t,m])=>{setItems(t.data);setMembers(m.members)}).catch(e=>setError(e.message))},[reload,setError]); async function add(e:FormEvent<HTMLFormElement>){e.preventDefault();const data:any=Object.fromEntries(new FormData(e.currentTarget).entries());if(data.assigned_to)data.assigned_to=Number(data.assigned_to);try{await api('/tasks',{method:'POST',body:JSON.stringify(data)});e.currentTarget.reset();setReload(v=>v+1)}catch(e){setError((e as Error).message)}} async function done(id:number){try{await api(`/tasks/${id}`,{method:'PATCH',body:JSON.stringify({status:'done'})});setReload(v=>v+1)}catch(e){setError((e as Error).message)}} return <><Title title="Tarefas" subtitle="Prazos, responsáveis e ações da equipa."/><form onSubmit={add} className="card p-4 grid md:grid-cols-4 gap-3 mb-5"><input className="field" name="title" placeholder="Nova tarefa" required/><select className="field" name="assigned_to" defaultValue=""><option value="">Atribuir a mim</option>{members.filter(m=>m.status==='active').map(m=><option value={m.user_id} key={m.user_id}>{m.name}</option>)}</select><input className="field" name="due_at" type="datetime-local"/><button className="btn">Criar</button></form><div className="grid gap-3">{items.map(x=><div className="card p-4 flex justify-between items-center gap-3" key={x.id}><div><b className={x.status==='done'?'line-through text-slate-400':''}>{x.title}</b><div className="text-sm text-slate-500">{members.find(m=>m.user_id===x.assigned_to)?.name||'Sem responsável'} · {x.due_at?new Date(x.due_at).toLocaleString('pt-AO'):'Sem prazo'}</div></div>{x.status==='pending'&&<button className="btn secondary" onClick={()=>done(x.id)}>Concluir</button>}</div>)}</div></>}
+
+function ServicesView({setError}:{setError:(v:string)=>void}){const [items,setItems]=useState<any[]>([]);const [professionals,setProfessionals]=useState<any[]>([]);const [reload,setReload]=useState(0);useEffect(()=>{Promise.all([api<PageData<any>>('/service-requests'),api<PageData<any>>('/professionals')]).then(([r,p])=>{setItems(r.data);setProfessionals(p.data)}).catch(e=>setError(e.message))},[reload,setError]);async function status(id:number,s:string){try{await api(`/service-requests/${id}`,{method:'PATCH',body:JSON.stringify({status:s})});setReload(v=>v+1)}catch(e){setError((e as Error).message)}}async function assign(id:number,professionalId:number){if(!professionalId)return;try{await api(`/service-requests/${id}/assignments`,{method:'POST',body:JSON.stringify({professional_id:professionalId})});setReload(v=>v+1)}catch(e){setError((e as Error).message)}}return <><Title title="Pedidos de serviço" subtitle="Triagem, profissional responsável e acompanhamento da execução."/><Table heads={['Referência','Cliente','Telefone','Estado','Profissional','Ação']} rows={items.map(x=>[x.public_reference,x.customer_name,x.customer_phone,<span className="badge" key="s">{x.status}</span>,<select key="p" className="field !py-1" defaultValue="" onChange={e=>assign(x.id,Number(e.target.value))}><option value="">Atribuir profissional</option>{professionals.filter(p=>p.status==='active'&&p.verification_state!=='rejected').map(p=><option key={p.id} value={p.id}>{p.name} · {p.specialty}</option>)}</select>,<select key="a" className="field !py-1" value={x.status} onChange={e=>status(x.id,e.target.value)}><option>submitted</option><option>triage</option><option>assigned</option><option>in_progress</option><option>completed</option><option>cancelled</option></select>])}/></>}
+
+function ProfessionalsView({setError,canManage}:{setError:(v:string)=>void;canManage:boolean}){const [items,setItems]=useState<any[]>([]);const [reload,setReload]=useState(0);useEffect(()=>{api<PageData<any>>('/professionals').then(r=>setItems(r.data)).catch(e=>setError(e.message))},[reload,setError]);async function add(e:FormEvent<HTMLFormElement>){e.preventDefault();try{await api('/professionals',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.currentTarget).entries()))});e.currentTarget.reset();setReload(v=>v+1)}catch(e){setError((e as Error).message)}}return <><Title title="Profissionais" subtitle="Rede operacional verificada para execução de serviços."/>{canManage&&<form onSubmit={add} className="card p-4 grid md:grid-cols-5 gap-3 mb-5"><input className="field" name="name" placeholder="Nome" required/><input className="field" name="email" type="email" placeholder="Email da conta"/><input className="field" name="phone" placeholder="Telefone"/><input className="field" name="specialty" placeholder="Especialidade" required/><button className="btn">Adicionar</button></form>}<Table heads={['Nome','Especialidade','Email','Telefone','Verificação']} rows={items.map(x=>[x.name,x.specialty,x.email||'—',x.phone||'—',<span className="badge" key="v">{x.verification_state}</span>])}/></>}
+
+function ProfessionalJobsView({setError}:{setError:(v:string)=>void}){const [items,setItems]=useState<any[]>([]);const [reload,setReload]=useState(0);useEffect(()=>{api<PageData<any>>('/professional/jobs').then(r=>setItems(r.data)).catch(e=>setError(e.message))},[reload,setError]);async function update(id:number,status:string){try{await api(`/professional/jobs/${id}`,{method:'PATCH',body:JSON.stringify({status})});setReload(v=>v+1)}catch(e){setError((e as Error).message)}}return <><Title title="Meus trabalhos" subtitle="Serviços que foram atribuídos ao seu perfil profissional."/><div className="grid gap-4">{items.length?items.map(job=><div className="card p-5" key={job.id}><div className="flex flex-wrap justify-between gap-3"><div><div className="text-sm text-slate-500">{job.public_reference}</div><h3 className="font-black text-xl">{job.customer_name}</h3><div className="text-sm text-slate-500">{job.customer_phone}</div></div><span className="badge h-fit">{job.status}</span></div><p className="mt-4 whitespace-pre-wrap">{job.description}</p><div className="flex flex-wrap gap-2 mt-5"><button className="btn secondary" onClick={()=>update(job.id,'accepted')}>Aceitar</button><button className="btn secondary" onClick={()=>update(job.id,'in_progress')}>Iniciar</button><button className="btn" onClick={()=>update(job.id,'completed')}>Concluir</button><button className="btn danger" onClick={()=>update(job.id,'rejected')}>Recusar</button></div></div>):<div className="card p-6 text-slate-500">Ainda não há trabalhos atribuídos.</div>}</div></>}
+
+function TeamView({setError}:{setError:(v:string)=>void}){const [data,setData]=useState<{members:any[];invitations:any[]}>({members:[],invitations:[]});const [inviteLink,setInviteLink]=useState('');const [reload,setReload]=useState(0);useEffect(()=>{api<{members:any[];invitations:any[]}>('/memberships').then(setData).catch(e=>setError(e.message))},[reload,setError]);async function invite(e:FormEvent<HTMLFormElement>){e.preventDefault();try{const result=await api<any>('/memberships',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.currentTarget).entries()))});if(result.invitation?.token){setInviteLink(`${window.location.origin}/?invite=${result.invitation.token}`)}else{setInviteLink('Utilizador adicionado diretamente ao workspace.')}e.currentTarget.reset();setReload(v=>v+1)}catch(e){setError((e as Error).message)}}return <><Title title="Equipa" subtitle="Membros, papéis e convites do workspace."/><form onSubmit={invite} className="card p-4 grid md:grid-cols-3 gap-3 mb-4"><input className="field" name="email" type="email" placeholder="Email do utilizador" required/><select className="field" name="role"><option value="agent">Agente</option><option value="admin">Administrador</option></select><button className="btn">Convidar</button></form>{inviteLink&&<div className="card p-4 mb-4"><div className="text-sm text-slate-500 mb-1">Link do convite</div><div className="break-all font-mono text-sm">{inviteLink}</div></div>}<Table heads={['Nome','Email','Papel','Estado']} rows={data.members.map(m=>[m.name,m.email,m.role,<span className="badge" key="s">{m.status}</span>])}/>{data.invitations.length>0&&<div className="mt-5"><h3 className="font-black mb-3">Convites pendentes</h3><Table heads={['Email','Papel','Expira']} rows={data.invitations.map(i=>[i.email,i.role,new Date(i.expires_at).toLocaleString('pt-AO')])}/></div>}</>}
+
+function SettingsView({setError,onSaved}:{setError:(v:string)=>void;onSaved:()=>void}){const [tenant,setTenant]=useState<any>(null);const [message,setMessage]=useState('');useEffect(()=>{api<any>('/settings/company').then(setTenant).catch(e=>setError(e.message))},[setError]);async function save(e:FormEvent<HTMLFormElement>){e.preventDefault();const fd=new FormData(e.currentTarget);const data:any=Object.fromEntries(fd.entries());data.email_notifications=fd.get('email_notifications')==='on';try{const updated=await api<any>('/settings/company',{method:'PATCH',body:JSON.stringify(data)});setTenant(updated);setMessage('Configurações guardadas.');onSaved()}catch(e){setError((e as Error).message)}}if(!tenant)return <div className="card p-6">A carregar configurações…</div>;return <><Title title="Configurações" subtitle="Dados básicos do workspace e notificações."/><form onSubmit={save} className="card p-5 max-w-2xl grid gap-4"><label><span className="text-sm font-bold">Nome da empresa</span><input className="field mt-1" name="name" defaultValue={tenant.name}/></label><label><span className="text-sm font-bold">Email de contacto</span><input className="field mt-1" name="contact_email" type="email" defaultValue={tenant.settings?.contact_email||''}/></label><label><span className="text-sm font-bold">Telefone</span><input className="field mt-1" name="phone" defaultValue={tenant.settings?.phone||''}/></label><label className="flex gap-2 items-center"><input name="email_notifications" type="checkbox" defaultChecked={tenant.settings?.email_notifications!==false}/><span>Enviar notificações operacionais por email</span></label>{message&&<div className="text-sm text-emerald-700">{message}</div>}<button className="btn w-fit">Guardar alterações</button></form></>}
+
+function OwnerView({setError}:{setError:(v:string)=>void}){
+  const [m,setM]=useState<any>(null); const [tenants,setTenants]=useState<any[]>([]); const [requests,setRequests]=useState<any[]>([]); const [audit,setAudit]=useState<any[]>([]); const [reload,setReload]=useState(0);
+  useEffect(()=>{Promise.all([api('/platform/metrics'),api<PageData<any>>('/platform/tenants'),api<PageData<any>>('/platform/service-requests'),api<PageData<any>>('/platform/audit-logs')]).then(([a,b,c,d])=>{setM(a);setTenants(b.data);setRequests(c.data);setAudit(d.data)}).catch(e=>setError(e.message))},[reload,setError]);
+  async function toggleTenant(t:any){try{await api(`/platform/tenants/${t.id}`,{method:'PATCH',body:JSON.stringify({status:t.status==='active'?'suspended':'active'})});setReload(v=>v+1)}catch(e){setError((e as Error).message)}}
+  async function assignRequest(id:number,tenantId:number){if(!tenantId)return;try{await api(`/platform/service-requests/${id}/assign`,{method:'POST',body:JSON.stringify({tenant_id:tenantId})});setReload(v=>v+1)}catch(e){setError((e as Error).message)}}
+  return <><Title title="Platform Owner" subtitle="Saúde global do SaaS, tenants e triagem central."/>{m&&<div className="grid sm:grid-cols-2 xl:grid-cols-5 gap-3 mb-6">{Object.entries(m).map(([k,v])=><div className="card p-5" key={k}><div className="text-xs uppercase text-slate-500">{k.replaceAll('_',' ')}</div><div className="text-2xl font-black mt-1">{String(v)}</div></div>)}</div>}
+    <h3 className="font-black text-xl mb-3">Pedidos públicos por encaminhar</h3><Table heads={['Referência','Cliente','Estado','Encaminhar para']} rows={requests.map(r=>[r.public_reference,r.customer_name,r.status,<select key="tenant" className="field !py-1" defaultValue="" onChange={e=>assignRequest(r.id,Number(e.target.value))}><option value="">Selecionar empresa</option>{tenants.filter(t=>t.status==='active').map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select>])}/>
+    <h3 className="font-black text-xl mt-7 mb-3">Empresas</h3><Table heads={['Empresa','Slug','Estado','Plano','Ação']} rows={tenants.map(t=>[t.name,t.slug,<span className="badge" key="s">{t.status}</span>,t.plan,<button key="a" className={t.status==='active'?'btn danger':'btn'} onClick={()=>toggleTenant(t)}>{t.status==='active'?'Suspender':'Reativar'}</button>])}/>
+    <h3 className="font-black text-xl mt-7 mb-3">Auditoria recente</h3><Table heads={['Quando','Empresa','Utilizador','Ação','Recurso']} rows={audit.slice(0,50).map(a=>[new Date(a.created_at).toLocaleString('pt-AO'),a.tenant_name||'Plataforma',a.actor_name||a.actor_email||'Sistema',a.action,`${a.resource_type}${a.resource_id?` #${a.resource_id}`:''}`])}/></>
+}
+
+function Title({title,subtitle}:{title:string;subtitle:string}){return <div className="mb-6"><h1 className="text-3xl font-black">{title}</h1><p className="text-slate-500 mt-1">{subtitle}</p></div>}
+function Table({heads,rows}:{heads:string[];rows:any[][]}){return <div className="card table-wrap"><table className="table"><thead><tr>{heads.map(h=><th key={h}>{h}</th>)}</tr></thead><tbody>{rows.length?rows.map((r,i)=><tr key={i}>{r.map((c,j)=><td key={j}>{c}</td>)}</tr>):<tr><td colSpan={heads.length} className="text-slate-500">Sem registos.</td></tr>}</tbody></table></div>}

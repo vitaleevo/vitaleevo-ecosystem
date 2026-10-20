@@ -2,24 +2,24 @@
 
 namespace Database\Seeders;
 
-use App\Models\User;
-use Illuminate\Database\Console\Seeds\WithoutModelEvents;
+use App\Models\Plan;
+use App\Models\ServiceCategory;
 use Illuminate\Database\Seeder;
 
 class DatabaseSeeder extends Seeder
 {
-    use WithoutModelEvents;
-
-    /**
-     * Seed the application's database.
-     */
     public function run(): void
     {
-        // User::factory(10)->create();
+        foreach (['Tecnologia e TI','Marketing e Design','Eletricidade','Automação Industrial','CCTV e Segurança','Formação Profissional'] as $name) {
+            ServiceCategory::firstOrCreate(['name'=>$name], ['active'=>true]);
+        }
 
-        User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-        ]);
+        foreach ([
+            ['code'=>'trial','name'=>'Teste','price_kz'=>0],
+            ['code'=>'basic','name'=>'Básico','price_kz'=>50000],
+            ['code'=>'advanced','name'=>'Avançado','price_kz'=>200000],
+        ] as $plan) {
+            Plan::updateOrCreate(['code'=>$plan['code']], $plan + ['active'=>true]);
+        }
     }
 }
